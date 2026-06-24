@@ -95,13 +95,25 @@ def _line_indent(line, page_left_x):
     return max(0, int(gap / 3))
 
 
-def extract_page_text(page):
+def extract_page_text(page, crop_top=0, crop_bottom=0):
     """Return one page's text with words in geometric reading order.
 
     Leading indentation is reconstructed as real leading spaces so the existing
     reflow logic (which detects paragraph starts by indent) keeps working.
+
+    crop_top: drop words in the top N points of the page (running headers).
+    crop_bottom: drop words in the bottom N points of the page (footnotes).
     """
     words = page.get_text("words")
+    if not words:
+        return ""
+
+    # Crop by y-position: drop headers at top and footnotes at bottom.
+    if crop_top or crop_bottom:
+        page_height = page.rect.height
+        words = [w for w in words
+                 if w[1] >= crop_top and w[3] <= (page_height - crop_bottom)]
+
     if not words:
         return ""
 
@@ -119,11 +131,11 @@ def extract_page_text(page):
     return "\n".join(out_lines)
 
 
-def extract_document(pdf_path):
+def extract_document(pdf_path, crop_top=0, crop_bottom=0):
     """Yield (page_number, page_text) for every page, in reading order."""
     doc = fitz.open(pdf_path)
     for pno in range(len(doc)):
-        yield pno, extract_page_text(doc[pno])
+        yield pno, extract_page_text(doc[pno], crop_top=crop_top, crop_bottom=crop_bottom)
     doc.close()
 
 
@@ -137,4 +149,3 @@ if __name__ == "__main__":
         print(f"===== PAGE {pno} =====")
         print(text[:1200])
         print()
-

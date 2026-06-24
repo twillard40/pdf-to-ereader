@@ -237,6 +237,41 @@ def merge_broken_sentences(paragraphs):
 
 
 # ---------------------------------------------------------------------------
+# Step 3c: separate chapter headings from body text they got glued to.
+# ---------------------------------------------------------------------------
+
+# Patterns that look like chapter/part/book headings.
+_HEADING_PATTERN = re.compile(
+    r'^((?:CHAPTER|BOOK|PART|SECTION)\s+'
+    r'(?:[IVXLCDM]+|[0-9]+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN'
+    r'|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY'
+    r'|THIRTY|FORTY|FIFTY))'
+    r'\s+(.+)',
+    re.IGNORECASE
+)
+
+
+def split_chapter_headings(paragraphs):
+    """Split paragraphs where a chapter heading is glued to body text.
+
+    "CHAPTER I THE schoolchildren" becomes two paragraphs:
+    "CHAPTER I" and "THE schoolchildren".
+    """
+    result = []
+    for para in paragraphs:
+        m = _HEADING_PATTERN.match(para)
+        if m:
+            heading = m.group(1).strip()
+            body = m.group(2).strip()
+            result.append(heading)
+            if body:
+                result.append(body)
+        else:
+            result.append(para)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Step 4: flag paragraphs that look suspicious so you can review them.
 # ---------------------------------------------------------------------------
 
@@ -426,10 +461,14 @@ def build_pdf(paragraphs, output_path, font_size=12, cover_png=None):
 # ---------------------------------------------------------------------------
 
 def convert(pdf_path, output_path, font_size=12, report=False, backend="positional",
-            skip_pages=0, cover_page=None):
+            skip_pages=0, cover_page=None, crop_top=0, crop_bottom=0):
     print(f"Extracting text from {pdf_path} (backend: {backend}) ...")
     if skip_pages:
         print(f"Skipping the first {skip_pages} page(s) of front matter.")
+    if crop_top:
+        print(f"Cropping top {crop_top}pt of each page (running headers).")
+    if crop_bottom:
+        print(f"Cropping bottom {crop_bottom}pt of each page (footnotes).")
 
     # Render the cover page first, if requested, so it survives the text skip.
     cover_png = None
@@ -443,20 +482,14 @@ def convert(pdf_path, output_path, font_size=12, report=False, backend="position
     all_paragraphs = []
 
     if backend == "positional":
-        # First pass: detect running headers across the document.
-        headers = detect_running_headers(pdf_path, skip_pages=skip_pages)
-        if headers:
-            print(f"Detected running headers: {headers}")
-
-        # Second pass: extract, strip headers, and reflow.
         page_count = 0
-        for pno, page_text in extract_positional.extract_document(pdf_path):
+        for pno, page_text in extract_positional.extract_document(
+                pdf_path, crop_top=crop_top, crop_bottom=crop_bottom):
             if pno < skip_pages:
                 continue
             page_count += 1
             page_text = clean_raw_text(page_text)
             page_text = page_text.replace("<<<PAGEBREAK>>>", "")
-            page_text = strip_headers_from_page(page_text, headers)
             if page_text.strip():
                 all_paragraphs.extend(reflow_page(page_text))
         print(f"Processed {page_count} pages.")
@@ -478,6 +511,10 @@ def convert(pdf_path, output_path, font_size=12, report=False, backend="position
     all_paragraphs = merge_broken_sentences(all_paragraphs)
     print(f"Merged {before - len(all_paragraphs)} mid-sentence breaks "
           f"-> {len(all_paragraphs)} paragraphs.")
+
+    # Separate chapter headings from body text they got glued to.
+    # "CHAPTER I THE schoolchildren" -> "CHAPTER I" + "THE schoolchildren"
+    all_paragraphs = split_chapter_headings(all_paragraphs)
 
     if report:
         suspects = find_suspects(all_paragraphs)
@@ -505,10 +542,15 @@ def main():
                         help="number of leading pages to drop (book jacket, title, copyright)")
     parser.add_argument("--cover-page", type=int, default=None,
                         help="page index (0-based) to render as a cover image and keep at the front")
+    parser.add_argument("--crop-top", type=int, default=0,
+                        help="drop words in the top N points of each page (strips running headers)")
+    parser.add_argument("--crop-bottom", type=int, default=0,
+                        help="drop words in the bottom N points of each page (strips footnotes)")
     args = parser.parse_args()
 
     convert(args.input, args.output, font_size=args.font_size, report=args.report,
-            backend=args.backend, skip_pages=args.skip_pages, cover_page=args.cover_page)
+            backend=args.backend, skip_pages=args.skip_pages, cover_page=args.cover_page,
+            crop_top=args.crop_top, crop_bottom=args.crop_bottom)
 
 
 if __name__ == "__main__":
