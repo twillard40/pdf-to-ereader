@@ -80,6 +80,9 @@ def clean_raw_text(text):
     # Mangled em-dash bytes: pdftotext sometimes emits the literal UTF-8 for an
     # em-dash on its own line as a floating dash. Normalize real em-dashes.
     text = text.replace("\u2014", "—").replace("\u2013", "–")
+    # Soft hyphens and NOT signs used as line-break hyphens by some OCR engines.
+    text = text.replace("\u00ac", "-")   # ¬ (NOT sign, common OCR misread)
+    text = text.replace("\u00ad", "-")   # soft hyphen
     # OCR routinely mangles curly quotes. The scanner reads a closing curly
     # double-quote as two apostrophes ('') and sometimes as a slash+apostrophe
     # (/' or /). Normalize the common garbled forms to straight quotes.
@@ -103,6 +106,10 @@ def fix_inword_artifacts(line):
     line = re.sub(r"[ \t]{2,}", " ", line)
     # Stray space before colon/semicolon: "face : chubby" -> "face: chubby"
     line = re.sub(r'\s+([;:])', r'\1', line)
+    # Broken hyphenation within a line: "ap- peared" -> "appeared"
+    # A hyphen followed by a space then a lowercase letter is almost always
+    # a word that was split and not properly rejoined.
+    line = re.sub(r'(\w)- ([a-z])', r'\1\2', line)
     return line
 
 
@@ -583,10 +590,10 @@ def main():
                         help="crop the top of each page to strip running headers. "
                              "Values < 1 are fractions of page height (default 0.06 = 6%%). "
                              "Values >= 1 are absolute points. Use 0 to disable.")
-    parser.add_argument("--crop-bottom", type=float, default=0,
+    parser.add_argument("--crop-bottom", type=float, default=0.08,
                         help="crop the bottom of each page to strip footnotes. "
-                             "Values < 1 are fractions of page height. "
-                             "Values >= 1 are absolute points. Default 0 (off).")
+                             "Values < 1 are fractions of page height (default 0.08 = 8%%). "
+                             "Values >= 1 are absolute points. Use 0 to disable.")
     args = parser.parse_args()
 
     convert(args.input, args.output, font_size=args.font_size, report=args.report,
