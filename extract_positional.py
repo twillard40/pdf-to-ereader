@@ -101,8 +101,9 @@ def extract_page_text(page, crop_top=0, crop_bottom=0):
     Leading indentation is reconstructed as real leading spaces so the existing
     reflow logic (which detects paragraph starts by indent) keeps working.
 
-    crop_top: drop words in the top N points of the page (running headers).
-    crop_bottom: drop words in the bottom N points of the page (footnotes).
+    crop_top: if > 0 and < 1, treated as a fraction of page height (e.g. 0.06
+              = top 6%). If >= 1, treated as absolute points.
+    crop_bottom: same logic, applied to the bottom of the page.
     """
     words = page.get_text("words")
     if not words:
@@ -111,8 +112,11 @@ def extract_page_text(page, crop_top=0, crop_bottom=0):
     # Crop by y-position: drop headers at top and footnotes at bottom.
     if crop_top or crop_bottom:
         page_height = page.rect.height
+        # Convert fractions to absolute points.
+        top_px = crop_top * page_height if 0 < crop_top < 1 else crop_top
+        bot_px = crop_bottom * page_height if 0 < crop_bottom < 1 else crop_bottom
         words = [w for w in words
-                 if w[1] >= crop_top and w[3] <= (page_height - crop_bottom)]
+                 if w[1] >= top_px and w[3] <= (page_height - bot_px)]
 
     if not words:
         return ""

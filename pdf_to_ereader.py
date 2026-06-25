@@ -408,6 +408,36 @@ def strip_headers_from_page(page_text, headers):
 # Step 5: render the cleaned paragraphs to a fresh PDF.
 # ---------------------------------------------------------------------------
 
+# Try to find a Unicode-capable font. DejaVu Serif has excellent coverage of
+# Central/Eastern European characters (č, ž, š, ř, etc.). We search common
+# paths on Linux and macOS; fall back to Helvetica if nothing is found.
+_UNICODE_FONT_PATHS = [
+    # Linux
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    # macOS (Homebrew or manual install)
+    "/usr/local/share/fonts/DejaVuSerif.ttf",
+    "/opt/homebrew/share/fonts/DejaVuSerif.ttf",
+    os.path.expanduser("~/Library/Fonts/DejaVuSerif.ttf"),
+    # macOS built-in alternatives with decent Unicode coverage
+    "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+]
+
+_FONT_NAME = "Helvetica"  # default fallback
+
+for _path in _UNICODE_FONT_PATHS:
+    if os.path.exists(_path):
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            pdfmetrics.registerFont(TTFont("UnicodeSerif", _path))
+            _FONT_NAME = "UnicodeSerif"
+            break
+        except Exception:
+            continue
+
+
 def build_pdf(paragraphs, output_path, font_size=12, cover_png=None):
     doc = SimpleDocTemplate(
         output_path,
@@ -422,6 +452,7 @@ def build_pdf(paragraphs, output_path, font_size=12, cover_png=None):
     body = ParagraphStyle(
         "Body",
         parent=styles["Normal"],
+        fontName=_FONT_NAME,
         fontSize=font_size,
         leading=font_size + 4,
         textColor="#000000",
@@ -466,9 +497,15 @@ def convert(pdf_path, output_path, font_size=12, report=False, backend="position
     if skip_pages:
         print(f"Skipping the first {skip_pages} page(s) of front matter.")
     if crop_top:
-        print(f"Cropping top {crop_top}pt of each page (running headers).")
+        if 0 < crop_top < 1:
+            print(f"Cropping top {crop_top*100:.0f}% of each page (running headers).")
+        else:
+            print(f"Cropping top {crop_top:.0f}pt of each page (running headers).")
     if crop_bottom:
-        print(f"Cropping bottom {crop_bottom}pt of each page (footnotes).")
+        if 0 < crop_bottom < 1:
+            print(f"Cropping bottom {crop_bottom*100:.0f}% of each page (footnotes).")
+        else:
+            print(f"Cropping bottom {crop_bottom:.0f}pt of each page (footnotes).")
 
     # Render the cover page first, if requested, so it survives the text skip.
     cover_png = None
@@ -542,10 +579,14 @@ def main():
                         help="number of leading pages to drop (book jacket, title, copyright)")
     parser.add_argument("--cover-page", type=int, default=None,
                         help="page index (0-based) to render as a cover image and keep at the front")
-    parser.add_argument("--crop-top", type=int, default=0,
-                        help="drop words in the top N points of each page (strips running headers)")
-    parser.add_argument("--crop-bottom", type=int, default=0,
-                        help="drop words in the bottom N points of each page (strips footnotes)")
+    parser.add_argument("--crop-top", type=float, default=0.06,
+                        help="crop the top of each page to strip running headers. "
+                             "Values < 1 are fractions of page height (default 0.06 = 6%%). "
+                             "Values >= 1 are absolute points. Use 0 to disable.")
+    parser.add_argument("--crop-bottom", type=float, default=0,
+                        help="crop the bottom of each page to strip footnotes. "
+                             "Values < 1 are fractions of page height. "
+                             "Values >= 1 are absolute points. Default 0 (off).")
     args = parser.parse_args()
 
     convert(args.input, args.output, font_size=args.font_size, report=args.report,
