@@ -204,6 +204,19 @@ def _ends_a_sentence(text):
     return bool(_SENTENCE_END.search(text.rstrip()))
 
 
+def _ends_with_no_punctuation(text):
+    """The paragraph ends on a bare word — no punctuation at all.
+
+    This is a stronger signal than just 'not ending a sentence'. A paragraph
+    ending with a comma or dash might be a stylistic break, but ending on a
+    bare word like 'yellow' or 'the' is never intentional. Always merge these.
+    """
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+    return stripped[-1].isalnum()
+
+
 def _looks_like_continuation_start(text):
     """The next paragraph continues the previous if it starts lowercase.
 
@@ -219,7 +232,13 @@ def _looks_like_continuation_start(text):
 
 def merge_broken_sentences(paragraphs):
     """Join consecutive paragraphs where the first ends mid-sentence and the
-    second clearly continues it (starts lowercase).
+    second clearly continues it.
+
+    Two levels of confidence:
+    - Previous ends with NO punctuation at all -> always merge (can't be a
+      real sentence ending).
+    - Previous ends with non-sentence punctuation (comma, dash) -> merge only
+      if next starts lowercase (conservative, protects dialogue).
     """
     if not paragraphs:
         return paragraphs
@@ -232,10 +251,10 @@ def merge_broken_sentences(paragraphs):
             continue
 
         prev_open = not _ends_a_sentence(prev)
+        prev_bare = _ends_with_no_punctuation(prev)
         nxt_continues = _looks_like_continuation_start(nxt)
 
-        if prev_open and nxt_continues:
-            # Glue with hyphen-awareness, same as wrapped-line joining.
+        if prev_bare or (prev_open and nxt_continues):
             merged[-1] = join_wrapped(prev, nxt.lstrip())
         else:
             merged.append(nxt)
@@ -499,7 +518,7 @@ def build_pdf(paragraphs, output_path, font_size=12, cover_png=None):
 # ---------------------------------------------------------------------------
 
 def convert(pdf_path, output_path, font_size=12, report=False, backend="positional",
-            skip_pages=0, cover_page=None, crop_top=0, crop_bottom=0):
+            skip_pages=0, cover_page=None, cover_image=None, crop_top=0, crop_bottom=0):
     print(f"Extracting text from {pdf_path} (backend: {backend}) ...")
     if skip_pages:
         print(f"Skipping the first {skip_pages} page(s) of front matter.")
@@ -515,8 +534,15 @@ def convert(pdf_path, output_path, font_size=12, report=False, backend="position
             print(f"Cropping bottom {crop_bottom:.0f}pt of each page (footnotes).")
 
     # Render the cover page first, if requested, so it survives the text skip.
+    # Determine cover: --cover-image takes priority over --cover-page.
     cover_png = None
-    if cover_page is not None:
+    if cover_image:
+        if os.path.exists(cover_image):
+            cover_png = cover_image
+            print(f"Using cover image: {cover_image}")
+        else:
+            print(f"Cover image not found: {cover_image}; skipping cover.")
+    elif cover_page is not None:
         cover_png = render_cover_image(pdf_path, cover_page, "/tmp/_cover.png")
         if cover_png:
             print(f"Rendered cover from page {cover_page}.")
@@ -586,6 +612,8 @@ def main():
                         help="number of leading pages to drop (book jacket, title, copyright)")
     parser.add_argument("--cover-page", type=int, default=None,
                         help="page index (0-based) to render as a cover image and keep at the front")
+    parser.add_argument("--cover-image", type=str, default=None,
+                        help="path to an image file (PNG/JPG) to use as the cover")
     parser.add_argument("--crop-top", type=float, default=0.06,
                         help="crop the top of each page to strip running headers. "
                              "Values < 1 are fractions of page height (default 0.06 = 6%%). "
@@ -598,7 +626,7 @@ def main():
 
     convert(args.input, args.output, font_size=args.font_size, report=args.report,
             backend=args.backend, skip_pages=args.skip_pages, cover_page=args.cover_page,
-            crop_top=args.crop_top, crop_bottom=args.crop_bottom)
+            cover_image=args.cover_image, crop_top=args.crop_top, crop_bottom=args.crop_bottom)
 
 
 if __name__ == "__main__":

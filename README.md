@@ -12,6 +12,86 @@ actual prose and re-renders it as plain, reflowable text at a readable size.
 Move pdf to pdf-to-ereader folder on computer. 
 Use venv, since you have many other projects.
 
+Quick start
+
+bashpip install PyMuPDF reportlab pillow
+
+Suggested default for most books:
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6
+
+That's it. Headers and footnotes crop automatically. The only thing you set per
+book is --skip-pages (how many front-matter pages to drop).
+
+Before / after
+
+The input is a scanned PDF whose OCR text layer, when extracted with standard
+tools, comes out like this:
+
+
+...build a new life on the ruins of the old for herself and her As she
+children. struggles against the devastation of war...
+
+
+
+The output reads the way the book actually reads:
+
+
+...build a new life on the ruins of the old for herself and her children.
+As she struggles against the devastation of war...
+
+
+
+All flags
+
+python pdf_to_ereader.py input.pdf output.pdf [options]
+
+python pdf_to_ereader.py input.pdf output.pdf [options]
+
+Flags
+--skip-pages N — Drop the first N pages. Set per book. Default: 0
+--cover-page N — Keep page N as a cover image. Default: off
+--cover-image path — Use your own PNG/JPG as the cover. Default: off
+--crop-top N — Crop top of each page to strip headers. Default: 0.06 (6%)
+--crop-bottom N — Crop bottom of each page to strip footnotes. Default: 0.08 (8%)
+--font-size N — Body font size in points. Default: 12
+--report — Print flagged OCR junk after processing. Default: off
+--backend — Extraction backend: positional or pdftotext. Default: positional
+
+Example commands
+
+Typical book (no cover):
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6
+
+Book with a nice cover on page 0:
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 11 --cover-page 0
+
+Book with your own cover image:
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --cover-image cover.jpg
+
+Headers still leaking through (bump crop):
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --crop-top 0.10
+
+Footnotes still showing (bump crop):
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --crop-bottom 0.12
+
+First run on a new book (see flagged issues):
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --report
+
+Bigger font for easier reading:
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --font-size 14
+
+Disable all cropping (rare, for books with no headers/footnotes):
+
+bashpython pdf_to_ereader.py "book.pdf" output.pdf --skip-pages 6 --crop-top 0 --crop-bottom 0
+
 ### Use
 
 1. Run the following to convert to clean PDF
